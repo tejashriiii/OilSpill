@@ -1,0 +1,7 @@
+fastapi[standard]
+python-multipart
+pillow
+numpy
+matplotlib
+tensorflow==2.12.0
+opencv-python

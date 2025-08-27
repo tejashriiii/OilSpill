@@ -1,25 +1,28 @@
 import React, { useState } from "react";
 import {
     Upload,
-    Image as ImageIcon,
+    FileImage,
     X,
     CheckCircle,
     Loader,
+    AlertCircle,
+    Download,
 } from "lucide-react";
 
 function App() {
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [results, setResults] = useState(null);
+    const [resultImageUrl, setResultImageUrl] = useState(null);
     const [error, setError] = useState(null);
     const [dragActive, setDragActive] = useState(false);
+    const [selectedModel, setSelectedModel] = useState("unet");
 
     const handleFileSelect = (file) => {
         if (file && file.type.startsWith("image/")) {
             setSelectedFile(file);
             setPreviewUrl(URL.createObjectURL(file));
-            setResults(null);
+            setResultImageUrl(null);
             setError(null);
         } else {
             setError("Please select a valid image file");
@@ -59,35 +62,63 @@ function App() {
 
         setIsProcessing(true);
         setError(null);
+        setResultImageUrl(null);
 
         try {
             const formData = new FormData();
             formData.append("file", selectedFile);
 
-            const response = await fetch("/api/detect-oil-spill", {
-                method: "POST",
-                body: formData,
-            });
+            const endpoint =
+                selectedModel === "both"
+                    ? "both"
+                    : selectedModel === "deeplab"
+                        ? "deeplab"
+                        : "unet";
+
+            const response = await fetch(
+                `http://localhost:8000/predict/${endpoint}`,
+                {
+                    method: "POST",
+                    body: formData,
+                },
+            );
 
             if (!response.ok) {
-                throw new Error("Failed to process image");
+                const errorText = await response.text();
+                throw new Error(`Failed to process image: ${errorText}`);
             }
 
-            const data = await response.json();
-            setResults(data);
+            // Convert the response to a blob and create an object URL
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            setResultImageUrl(imageUrl);
         } catch (err) {
-            setError("Failed to process image. Please try again.");
+            setError(`Failed to process image: ${err.message}`);
             console.error("Processing error:", err);
         } finally {
             setIsProcessing(false);
         }
     };
 
+    const downloadResult = () => {
+        if (resultImageUrl) {
+            const link = document.createElement("a");
+            link.href = resultImageUrl;
+            link.download = `${selectedModel}_prediction.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
     const resetUpload = () => {
         setSelectedFile(null);
         setPreviewUrl(null);
-        setResults(null);
+        setResultImageUrl(null);
         setError(null);
+        // Clean up object URLs to prevent memory leaks
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        if (resultImageUrl) URL.revokeObjectURL(resultImageUrl);
     };
 
     return (
@@ -97,7 +128,7 @@ function App() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                     <div className="flex items-center space-x-3">
                         <div className="p-2 bg-blue-600 rounded-lg">
-                            <ImageIcon className="h-8 w-8 text-white" />
+                            <FileImage className="h-8 w-8 text-white" />
                         </div>
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900">
@@ -120,6 +151,44 @@ function App() {
                                 <Upload className="h-6 w-6 mr-3 text-blue-600" />
                                 Upload Satellite Image
                             </h2>
+
+                            {/* Model Selection */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-3">
+                                    Select AI Model
+                                </label>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <button
+                                        onClick={() => setSelectedModel("unet")}
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${selectedModel === "unet"
+                                                ? "bg-blue-600 text-white border-blue-600"
+                                                : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                                            }`}
+                                    >
+                                        UNet
+                                    </button>
+                                    <button
+                                        onClick={() =>
+                                            setSelectedModel("deeplab")
+                                        }
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${selectedModel === "deeplab"
+                                                ? "bg-blue-600 text-white border-blue-600"
+                                                : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                                            }`}
+                                    >
+                                        DeepLabV3+
+                                    </button>
+                                    <button
+                                        onClick={() => setSelectedModel("both")}
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${selectedModel === "both"
+                                                ? "bg-blue-600 text-white border-blue-600"
+                                                : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                                            }`}
+                                    >
+                                        Both Models
+                                    </button>
+                                </div>
+                            </div>
 
                             {/* File Upload Area */}
                             <div
@@ -185,7 +254,7 @@ function App() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <ImageIcon className="h-5 w-5 mr-2" />
+                                                    <FileImage className="h-5 w-5 mr-2" />
                                                     Detect Oil Spills
                                                 </>
                                             )}
@@ -202,9 +271,11 @@ function App() {
 
                             {/* Error Message */}
                             {error && (
-                                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center">
-                                    <AlertCircle className="h-5 w-5 text-red-500 mr-3" />
-                                    <p className="text-red-700">{error}</p>
+                                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start">
+                                    <AlertCircle className="h-5 w-5 text-red-500 mr-3 mt-0.5 flex-shrink-0" />
+                                    <p className="text-red-700 text-sm">
+                                        {error}
+                                    </p>
                                 </div>
                             )}
                         </div>
@@ -216,19 +287,24 @@ function App() {
                             </h3>
                             <ul className="space-y-2 text-sm text-gray-600">
                                 <li className="flex items-start">
-                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5" />
+                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
                                     Upload satellite or aerial images of ocean
                                     areas
                                 </li>
                                 <li className="flex items-start">
-                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5" />
-                                    AI model analyzes the image using advanced
+                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
+                                    Choose between UNet, DeepLabV3+, or both
+                                    models
+                                </li>
+                                <li className="flex items-start">
+                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
+                                    AI analyzes the image using advanced
                                     segmentation
                                 </li>
                                 <li className="flex items-start">
-                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5" />
-                                    Receive detailed mask showing potential oil
-                                    spill areas
+                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
+                                    Receive detailed visualization of potential
+                                    oil spills
                                 </li>
                             </ul>
                         </div>
@@ -237,16 +313,31 @@ function App() {
                     {/* Results Section */}
                     <div className="space-y-6">
                         <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-8">
-                            <h2 className="text-2xl font-semibold text-gray-900 mb-6">
-                                Detection Results
-                            </h2>
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-semibold text-gray-900">
+                                    Detection Results
+                                </h2>
+                                {resultImageUrl && (
+                                    <button
+                                        onClick={downloadResult}
+                                        className="flex items-center px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium"
+                                    >
+                                        <Download className="h-4 w-4 mr-2" />
+                                        Download
+                                    </button>
+                                )}
+                            </div>
 
-                            {!results && !isProcessing && (
+                            {!resultImageUrl && !isProcessing && (
                                 <div className="text-center py-12 text-gray-500">
-                                    <ImageIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                                    <FileImage className="h-16 w-16 mx-auto mb-4 text-gray-300" />
                                     <p className="text-lg">
                                         Upload and process an image to see
                                         results
+                                    </p>
+                                    <p className="text-sm text-gray-400 mt-2">
+                                        Select a model and upload your satellite
+                                        image above
                                     </p>
                                 </div>
                             )}
@@ -257,7 +348,11 @@ function App() {
                                         <Loader className="h-8 w-8 text-blue-600 animate-spin" />
                                     </div>
                                     <p className="text-lg text-gray-700">
-                                        Processing your image...
+                                        Processing your image with{" "}
+                                        {selectedModel === "both"
+                                            ? "both models"
+                                            : selectedModel}
+                                        ...
                                     </p>
                                     <p className="text-sm text-gray-500 mt-2">
                                         This may take a few seconds
@@ -265,74 +360,83 @@ function App() {
                                 </div>
                             )}
 
-                            {results && (
+                            {resultImageUrl && (
                                 <div className="space-y-6">
-                                    {/* Results Grid */}
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <div className="space-y-3">
-                                            <h3 className="font-semibold text-gray-900">
-                                                Original Image
-                                            </h3>
+                                    <div className="space-y-3">
+                                        <h3 className="font-semibold text-gray-900 flex items-center">
+                                            <FileImage className="h-5 w-5 mr-2 text-blue-600" />
+                                            Analysis Results -{" "}
+                                            {selectedModel === "both"
+                                                ? "Both Models"
+                                                : selectedModel.toUpperCase()}
+                                        </h3>
+                                        <div className="border border-gray-200 rounded-lg overflow-hidden">
                                             <img
-                                                src={
-                                                    results.original_image ||
-                                                    previewUrl
-                                                }
-                                                alt="Original"
-                                                className="w-full h-48 object-cover rounded-lg border border-gray-200"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            <h3 className="font-semibold text-gray-900">
-                                                Detection Mask
-                                            </h3>
-                                            <img
-                                                src={results.mask_image}
-                                                alt="Detection Mask"
-                                                className="w-full h-48 object-cover rounded-lg border border-gray-200"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            <h3 className="font-semibold text-gray-900">
-                                                Overlay Result
-                                            </h3>
-                                            <img
-                                                src={results.overlay_image}
-                                                alt="Overlay"
-                                                className="w-full h-48 object-cover rounded-lg border border-gray-200"
+                                                src={resultImageUrl}
+                                                alt="Detection Results"
+                                                className="w-full h-auto"
                                             />
                                         </div>
                                     </div>
 
-                                    {/* Analysis Summary */}
-                                    <div className="bg-gradient-to-r from-blue-50 to-teal-50 rounded-xl p-6 border border-blue-200">
-                                        <h3 className="font-semibold text-gray-900 mb-3">
-                                            Analysis Summary
-                                        </h3>
-                                        <div className="grid grid-cols-2 gap-4 text-sm">
-                                            <div>
-                                                <span className="font-medium text-gray-700">
-                                                    Detection Confidence:
-                                                </span>
-                                                <p className="text-2xl font-bold text-blue-600 mt-1">
-                                                    {results.confidence ||
-                                                        "95.2"}
-                                                    %
-                                                </p>
+                                    {/* Color Legend */}
+                                    <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-200">
+                                        <h4 className="font-semibold text-gray-900 mb-3">
+                                            Color Legend
+                                        </h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                                            <div className="flex items-center">
+                                                <div className="w-4 h-4 bg-black border border-gray-300 rounded mr-2"></div>
+                                                <span>Background</span>
                                             </div>
-                                            <div>
-                                                <span className="font-medium text-gray-700">
-                                                    Affected Area:
+                                            <div className="flex items-center">
+                                                <div className="w-4 h-4 bg-cyan-400 border border-gray-300 rounded mr-2"></div>
+                                                <span>Water</span>
+                                            </div>
+                                            <div className="flex items-center">
+                                                <div className="w-4 h-4 bg-red-500 border border-gray-300 rounded mr-2"></div>
+                                                <span>Oil Spill</span>
+                                            </div>
+                                            <div className="flex items-center">
+                                                <div
+                                                    className="w-4 h-4"
+                                                    style={{
+                                                        backgroundColor:
+                                                            "rgb(153, 76, 0)",
+                                                    }}
+                                                ></div>
+                                                <span className="ml-2">
+                                                    Land/Shore
                                                 </span>
-                                                <p className="text-2xl font-bold text-teal-600 mt-1">
-                                                    {results.affected_area ||
-                                                        "1.3"}{" "}
-                                                    km²
-                                                </p>
+                                            </div>
+                                            <div className="flex items-center">
+                                                <div
+                                                    className="w-4 h-4"
+                                                    style={{
+                                                        backgroundColor:
+                                                            "rgb(0, 153, 0)",
+                                                    }}
+                                                ></div>
+                                                <span className="ml-2">
+                                                    Vegetation
+                                                </span>
                                             </div>
                                         </div>
+                                    </div>
+
+                                    {/* Model Info */}
+                                    <div className="bg-gradient-to-r from-blue-50 to-teal-50 rounded-xl p-4 border border-blue-200">
+                                        <h4 className="font-semibold text-gray-900 mb-2">
+                                            Model Information
+                                        </h4>
+                                        <p className="text-sm text-gray-600">
+                                            {selectedModel === "unet" &&
+                                                "UNet: Excellent for precise boundary detection with efficient U-shaped architecture."}
+                                            {selectedModel === "deeplab" &&
+                                                "DeepLabV3+: Advanced model with dilated convolutions for improved contextual understanding."}
+                                            {selectedModel === "both" &&
+                                                "Comparison view showing results from both UNet and DeepLabV3+ models side by side."}
+                                        </p>
                                     </div>
                                 </div>
                             )}
