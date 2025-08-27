@@ -38,7 +38,8 @@ COLOR_MAP = [
     [0, 153, 0],
 ]
 
-scaled_color_map = [[c[0] / 255.0, c[1] / 255.0, c[2] / 255.0] for c in COLOR_MAP]
+scaled_color_map = [[c[0] / 255.0, c[1] / 255.0, c[2] / 255.0]
+                    for c in COLOR_MAP]
 cmap = mcolors.ListedColormap(scaled_color_map)
 
 unet_model = None
@@ -49,7 +50,8 @@ def load_models():
     global unet_model, deeplab_model
     try:
         unet_model = tf.keras.models.load_model("unet_model.h5", compile=False)
-        deeplab_model = tf.keras.models.load_model("deeplab_model.h5", compile=False)
+        deeplab_model = tf.keras.models.load_model(
+            "deeplab_model.h5", compile=False)
     except Exception as e:
         print(f"Error loading models: {e}")
 
@@ -128,15 +130,18 @@ async def predict_unet(file: UploadFile = File(...)):
         image_bytes = await file.read()
         processed_image = preprocess_image(image_bytes)
 
-        prediction = unet_model.predict(np.expand_dims(processed_image, axis=0))
+        prediction = unet_model.predict(
+            np.expand_dims(processed_image, axis=0))
         predicted_mask = np.argmax(prediction, axis=3)[0, :, :]
 
-        plot_buffer = create_prediction_plot(processed_image, predicted_mask, "UNet")
+        plot_buffer = create_prediction_plot(
+            processed_image, predicted_mask, "UNet")
 
         return StreamingResponse(
             io.BytesIO(plot_buffer.read()),
             media_type="image/png",
-            headers={"Content-Disposition": "attachment; filename=unet_prediction.png"},
+            headers={
+                "Content-Disposition": "attachment; filename=unet_prediction.png"},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -154,7 +159,8 @@ async def predict_deeplab(file: UploadFile = File(...)):
         image_bytes = await file.read()
         processed_image = preprocess_image(image_bytes)
 
-        prediction = deeplab_model.predict(np.expand_dims(processed_image, axis=0))
+        prediction = deeplab_model.predict(
+            np.expand_dims(processed_image, axis=0))
         predicted_mask = np.argmax(prediction, axis=3)[0, :, :]
 
         plot_buffer = create_prediction_plot(
@@ -184,7 +190,8 @@ async def predict_both(file: UploadFile = File(...)):
         image_bytes = await file.read()
         processed_image = preprocess_image(image_bytes)
 
-        unet_prediction = unet_model.predict(np.expand_dims(processed_image, axis=0))
+        unet_prediction = unet_model.predict(
+            np.expand_dims(processed_image, axis=0))
         unet_mask = np.argmax(unet_prediction, axis=3)[0, :, :]
 
         deeplab_prediction = deeplab_model.predict(
@@ -256,3 +263,6 @@ async def predict_both(file: UploadFile = File(...)):
                 "Content-Disposition": "attachment; filename=both_predictions.png"
             },
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
