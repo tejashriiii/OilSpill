@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
     Upload,
     FileImage,
@@ -17,12 +17,19 @@ function App() {
     const [error, setError] = useState(null);
     const [dragActive, setDragActive] = useState(false);
     const [selectedModel, setSelectedModel] = useState("unet");
+    const [aerialJson, setAerialJson] = useState(null);
+
+    // Refs for aerial overlay rendering (kept in case we want client-side later)
+    const overlayContainerRef = useRef(null);
+    const previewImgRef = useRef(null);
+    const overlayCanvasRef = useRef(null);
 
     const handleFileSelect = (file) => {
         if (file && file.type.startsWith("image/")) {
             setSelectedFile(file);
             setPreviewUrl(URL.createObjectURL(file));
             setResultImageUrl(null);
+            setAerialJson(null);
             setError(null);
         } else {
             setError("Please select a valid image file");
@@ -72,7 +79,9 @@ function App() {
                 selectedModel === "both"
                     ? "both"
                     : selectedModel === "deeplab"
-                        ? "deeplab"
+                      ? "deeplab"
+                      : selectedModel === "aerial"
+                        ? "aerial"
                         : "unet";
 
             const response = await fetch(
@@ -88,10 +97,11 @@ function App() {
                 throw new Error(`Failed to process image: ${errorText}`);
             }
 
-            // Convert the response to a blob and create an object URL
+            // All endpoints now return images
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             setResultImageUrl(imageUrl);
+            setAerialJson(null);
         } catch (err) {
             setError(`Failed to process image: ${err.message}`);
             console.error("Processing error:", err);
@@ -115,11 +125,30 @@ function App() {
         setSelectedFile(null);
         setPreviewUrl(null);
         setResultImageUrl(null);
+        setAerialJson(null);
         setError(null);
         // Clean up object URLs to prevent memory leaks
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         if (resultImageUrl) URL.revokeObjectURL(resultImageUrl);
     };
+
+    // Retain no-op overlay effects (in case we switch back to JSON rendering)
+    const drawAerialOverlay = useCallback(() => {}, []);
+    useEffect(() => {
+        drawAerialOverlay();
+    }, [drawAerialOverlay, previewUrl]);
+    useEffect(() => {
+        const imgEl = previewImgRef.current;
+        if (!imgEl) return;
+        const handleLoad = () => drawAerialOverlay();
+        imgEl.addEventListener("load", handleLoad);
+        const handleResize = () => drawAerialOverlay();
+        window.addEventListener("resize", handleResize);
+        return () => {
+            imgEl.removeEventListener("load", handleLoad);
+            window.removeEventListener("resize", handleResize);
+        };
+    }, [drawAerialOverlay]);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50">
@@ -157,13 +186,14 @@ function App() {
                                 <label className="block text-sm font-medium text-gray-700 mb-3">
                                     Select AI Model
                                 </label>
-                                <div className="grid grid-cols-3 gap-3">
+                                <div className="grid grid-cols-4 gap-3">
                                     <button
                                         onClick={() => setSelectedModel("unet")}
-                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${selectedModel === "unet"
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                                            selectedModel === "unet"
                                                 ? "bg-blue-600 text-white border-blue-600"
                                                 : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
-                                            }`}
+                                        }`}
                                     >
                                         UNet
                                     </button>
@@ -171,31 +201,46 @@ function App() {
                                         onClick={() =>
                                             setSelectedModel("deeplab")
                                         }
-                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${selectedModel === "deeplab"
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                                            selectedModel === "deeplab"
                                                 ? "bg-blue-600 text-white border-blue-600"
                                                 : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
-                                            }`}
+                                        }`}
                                     >
                                         DeepLabV3+
                                     </button>
                                     <button
                                         onClick={() => setSelectedModel("both")}
-                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${selectedModel === "both"
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                                            selectedModel === "both"
                                                 ? "bg-blue-600 text-white border-blue-600"
                                                 : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
-                                            }`}
+                                        }`}
                                     >
                                         Both Models
+                                    </button>
+                                    <button
+                                        onClick={() =>
+                                            setSelectedModel("aerial")
+                                        }
+                                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                                            selectedModel === "aerial"
+                                                ? "bg-blue-600 text-white border-blue-600"
+                                                : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                                        }`}
+                                    >
+                                        Aerial (Roboflow)
                                     </button>
                                 </div>
                             </div>
 
                             {/* File Upload Area */}
                             <div
-                                className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300 ${dragActive
+                                className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300 ${
+                                    dragActive
                                         ? "border-blue-400 bg-blue-50"
                                         : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"
-                                    }`}
+                                }`}
                                 onDragEnter={handleDrag}
                                 onDragLeave={handleDrag}
                                 onDragOver={handleDrag}
@@ -227,12 +272,23 @@ function App() {
                             {/* Preview */}
                             {previewUrl && (
                                 <div className="mt-6">
-                                    <div className="relative">
+                                    <div
+                                        ref={overlayContainerRef}
+                                        className="relative w-full h-64"
+                                    >
                                         <img
+                                            ref={previewImgRef}
                                             src={previewUrl}
                                             alt="Preview"
-                                            className="w-full h-64 object-cover rounded-xl border border-gray-200"
+                                            className="absolute inset-0 w-full h-full object-contain rounded-xl border border-gray-200"
                                         />
+                                        {/* Keep overlay canvas hidden for now since backend returns images */}
+                                        {false && (
+                                            <canvas
+                                                ref={overlayCanvasRef}
+                                                className="absolute inset-0 w-full h-full pointer-events-none rounded-xl"
+                                            />
+                                        )}
                                         <button
                                             onClick={resetUpload}
                                             className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
@@ -380,50 +436,50 @@ function App() {
                                     </div>
 
                                     {/* Color Legend */}
-                                    <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-200">
-                                        <h4 className="font-semibold text-gray-900 mb-3">
-                                            Color Legend
-                                        </h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-                                            <div className="flex items-center">
-                                                <div className="w-4 h-4 bg-black border border-gray-300 rounded mr-2"></div>
-                                                <span>Background</span>
-                                            </div>
-                                            <div className="flex items-center">
-                                                <div className="w-4 h-4 bg-cyan-400 border border-gray-300 rounded mr-2"></div>
-                                                <span>Water</span>
-                                            </div>
-                                            <div className="flex items-center">
-                                                <div className="w-4 h-4 bg-red-500 border border-gray-300 rounded mr-2"></div>
-                                                <span>Oil Spill</span>
-                                            </div>
-                                            <div className="flex items-center">
-                                                <div
-                                                    className="w-4 h-4"
-                                                    style={{
-                                                        backgroundColor:
-                                                            "rgb(153, 76, 0)",
-                                                    }}
-                                                ></div>
-                                                <span className="ml-2">
-                                                    Land/Shore
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center">
-                                                <div
-                                                    className="w-4 h-4"
-                                                    style={{
-                                                        backgroundColor:
-                                                            "rgb(0, 153, 0)",
-                                                    }}
-                                                ></div>
-                                                <span className="ml-2">
-                                                    Vegetation
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-
+                                    {/* <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-200"> */}
+                                    {/*     <h4 className="font-semibold text-gray-900 mb-3"> */}
+                                    {/*         Color Legend */}
+                                    {/*     </h4> */}
+                                    {/*     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs"> */}
+                                    {/*         <div className="flex items-center"> */}
+                                    {/*             <div className="w-4 h-4 bg-black border border-gray-300 rounded mr-2"></div> */}
+                                    {/*             <span>Background</span> */}
+                                    {/*         </div> */}
+                                    {/*         <div className="flex items-center"> */}
+                                    {/*             <div className="w-4 h-4 bg-cyan-400 border border-gray-300 rounded mr-2"></div> */}
+                                    {/*             <span>Water</span> */}
+                                    {/*         </div> */}
+                                    {/*         <div className="flex items-center"> */}
+                                    {/*             <div className="w-4 h-4 bg-red-500 border border-gray-300 rounded mr-2"></div> */}
+                                    {/*             <span>Oil Spill</span> */}
+                                    {/*         </div> */}
+                                    {/*         <div className="flex items-center"> */}
+                                    {/*             <div */}
+                                    {/*                 className="w-4 h-4" */}
+                                    {/*                 style={{ */}
+                                    {/*                     backgroundColor: */}
+                                    {/*                         "rgb(153, 76, 0)", */}
+                                    {/*                 }} */}
+                                    {/*             ></div> */}
+                                    {/*             <span className="ml-2"> */}
+                                    {/*                 Land/Shore */}
+                                    {/*             </span> */}
+                                    {/*         </div> */}
+                                    {/*         <div className="flex items-center"> */}
+                                    {/*             <div */}
+                                    {/*                 className="w-4 h-4" */}
+                                    {/*                 style={{ */}
+                                    {/*                     backgroundColor: */}
+                                    {/*                         "rgb(0, 153, 0)", */}
+                                    {/*                 }} */}
+                                    {/*             ></div> */}
+                                    {/*             <span className="ml-2"> */}
+                                    {/*                 Vegetation */}
+                                    {/*             </span> */}
+                                    {/*         </div> */}
+                                    {/*     </div> */}
+                                    {/* </div> */}
+                                    {/**/}
                                     {/* Model Info */}
                                     <div className="bg-gradient-to-r from-blue-50 to-teal-50 rounded-xl p-4 border border-blue-200">
                                         <h4 className="font-semibold text-gray-900 mb-2">
@@ -436,6 +492,8 @@ function App() {
                                                 "DeepLabV3+: Advanced model with dilated convolutions for improved contextual understanding."}
                                             {selectedModel === "both" &&
                                                 "Comparison view showing results from both UNet and DeepLabV3+ models side by side."}
+                                            {selectedModel === "aerial" &&
+                                                "Aerial workflow visualization composed server-side from Roboflow polygons."}
                                         </p>
                                     </div>
                                 </div>
