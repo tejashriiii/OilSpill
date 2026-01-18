@@ -8,6 +8,7 @@ import {
     AlertCircle,
     Download,
 } from "lucide-react";
+import ImageZoom from "./components/ImageZoom";
 
 function App() {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -19,6 +20,7 @@ function App() {
     const DEFAULT_MODEL = "unet";
     const [detectedSource, setDetectedSource] = useState(null); // 'sar' | 'aerial' | null
     const [detectionConfidence, setDetectionConfidence] = useState(null);
+    const [zoomedImage, setZoomedImage] = useState(null); // URL of image to zoom
 
     // Color mapping for segmentation classes (RGB values)
     const COLOR_MAP = [
@@ -304,7 +306,8 @@ function App() {
                                             ref={previewImgRef}
                                             src={previewUrl}
                                             alt="Preview"
-                                            className="absolute inset-0 w-full h-full object-contain rounded-xl border border-gray-200"
+                                            className="absolute inset-0 w-full h-full object-contain rounded-xl border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                            onClick={() => setZoomedImage(previewUrl)}
                                         />
                                         {/* overlay canvas removed; backend returns images */}
                                         <button
@@ -475,7 +478,8 @@ function App() {
                                             <img
                                                 src={resultImageUrl}
                                                 alt="Detection Results"
-                                                className="w-full h-auto"
+                                                className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                                onClick={() => setZoomedImage(resultImageUrl)}
                                             />
                                         </div>
                                     </div>
@@ -528,6 +532,15 @@ function App() {
                     </div>
                 </div>
             </main>
+            
+            {/* Image Zoom Modal */}
+            {zoomedImage && (
+                <ImageZoom
+                    src={zoomedImage}
+                    alt="Zoomed view"
+                    onClose={() => setZoomedImage(null)}
+                />
+            )}
         </div>
     );
 }
