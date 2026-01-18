@@ -20,6 +20,23 @@ function App() {
     const [detectedSource, setDetectedSource] = useState(null); // 'sar' | 'aerial' | null
     const [detectionConfidence, setDetectionConfidence] = useState(null);
 
+    // Color mapping for segmentation classes (RGB values)
+    const COLOR_MAP = [
+        [0, 0, 0],      // Class 0: Background - Black
+        [0, 255, 255],  // Class 1: Sheen - Cyan
+        [255, 0, 0],    // Class 2: Oil Spill - Red
+        [153, 76, 0],   // Class 3: Ship - Brown
+        [0, 153, 0],    // Class 4: Land/Vegetation - Green
+    ];
+
+    const CLASS_LABELS = [
+        "Background/Water",
+        "Sheen",
+        "Oil Spill",
+        "Ship",
+        "Land/Vegetation",
+    ];
+
     // Refs for aerial overlay rendering (kept in case we want client-side later)
     const overlayContainerRef = useRef(null);
     const previewImgRef = useRef(null);
@@ -464,50 +481,38 @@ function App() {
                                     </div>
 
                                     {/* Color Legend */}
-                                    {/* <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-200"> */}
-                                    {/*     <h4 className="font-semibold text-gray-900 mb-3"> */}
-                                    {/*         Color Legend */}
-                                    {/*     </h4> */}
-                                    {/*     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs"> */}
-                                    {/*         <div className="flex items-center"> */}
-                                    {/*             <div className="w-4 h-4 bg-black border border-gray-300 rounded mr-2"></div> */}
-                                    {/*             <span>Background</span> */}
-                                    {/*         </div> */}
-                                    {/*         <div className="flex items-center"> */}
-                                    {/*             <div className="w-4 h-4 bg-cyan-400 border border-gray-300 rounded mr-2"></div> */}
-                                    {/*             <span>Water</span> */}
-                                    {/*         </div> */}
-                                    {/*         <div className="flex items-center"> */}
-                                    {/*             <div className="w-4 h-4 bg-red-500 border border-gray-300 rounded mr-2"></div> */}
-                                    {/*             <span>Oil Spill</span> */}
-                                    {/*         </div> */}
-                                    {/*         <div className="flex items-center"> */}
-                                    {/*             <div */}
-                                    {/*                 className="w-4 h-4" */}
-                                    {/*                 style={{ */}
-                                    {/*                     backgroundColor: */}
-                                    {/*                         "rgb(153, 76, 0)", */}
-                                    {/*                 }} */}
-                                    {/*             ></div> */}
-                                    {/*             <span className="ml-2"> */}
-                                    {/*                 Land/Shore */}
-                                    {/*             </span> */}
-                                    {/*         </div> */}
-                                    {/*         <div className="flex items-center"> */}
-                                    {/*             <div */}
-                                    {/*                 className="w-4 h-4" */}
-                                    {/*                 style={{ */}
-                                    {/*                     backgroundColor: */}
-                                    {/*                         "rgb(0, 153, 0)", */}
-                                    {/*                 }} */}
-                                    {/*             ></div> */}
-                                    {/*             <span className="ml-2"> */}
-                                    {/*                 Vegetation */}
-                                    {/*             </span> */}
-                                    {/*         </div> */}
-                                    {/*     </div> */}
-                                    {/* </div> */}
-                                    {/**/}
+                                    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
+                                        <h4 className="font-semibold text-gray-900 mb-4">
+                                            Color Legend
+                                        </h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {COLOR_MAP.map((color, index) => {
+                                                const rgbColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+                                                return (
+                                                    <div
+                                                        key={index}
+                                                        className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                                                    >
+                                                        <div
+                                                            className="w-8 h-8 rounded-md border border-gray-300 shadow-sm flex-shrink-0"
+                                                            style={{
+                                                                backgroundColor: rgbColor,
+                                                            }}
+                                                        />
+                                                        <div className="flex-1">
+                                                            <p className="text-sm font-medium text-gray-900">
+                                                                {CLASS_LABELS[index]}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500">
+                                                                Class {index}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
                                     {/* Model Info */}
                                     <div className="bg-gradient-to-r from-blue-50 to-teal-50 rounded-xl p-4 border border-blue-200">
                                         <h4 className="font-semibold text-gray-900 mb-2">

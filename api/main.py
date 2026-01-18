@@ -33,12 +33,13 @@ app.add_middleware(
 
 IMG_HEIGHT = 256
 IMG_WIDTH = 256
+# Color mapping for segmentation classes (RGB values)
 COLOR_MAP = [
-    [0, 0, 0],
-    [0, 255, 255],
-    [255, 0, 0],
-    [153, 76, 0],
-    [0, 153, 0],
+    [0, 0, 0],      # Class 0: Background - Black
+    [0, 255, 255],  # Class 1: Sheen - Cyan
+    [255, 0, 0],    # Class 2: Oil Spill - Red
+    [153, 76, 0],   # Class 3: Ship - Brown
+    [0, 153, 0],    # Class 4: Land/Vegetation - Green
 ]
 
 scaled_color_map = [[c[0] / 255.0, c[1] / 255.0, c[2] / 255.0] for c in COLOR_MAP]
