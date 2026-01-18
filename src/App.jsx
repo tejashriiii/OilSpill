@@ -119,6 +119,12 @@ function App() {
     const processImage = async () => {
         if (!selectedFile) return;
 
+        // Block aerial images
+        if (detectedSource === "aerial") {
+            setError("Aerial images are not supported. Please upload a SAR (Synthetic Aperture Radar) image.");
+            return;
+        }
+
         setIsProcessing(true);
         setError(null);
         setResultImageUrl(null);
@@ -127,23 +133,9 @@ function App() {
             const formData = new FormData();
             formData.append("file", selectedFile);
 
-            // If the detection said 'sar' route to 'both' (as requested),
-            // if 'aerial' route to 'aerial'. Otherwise use selectedModel mapping.
-            let endpoint = "unet";
-            if (detectedSource === "sar") {
-                endpoint = "both"; // run both models for SAR
-            } else if (detectedSource === "aerial") {
-                endpoint = "aerial";
-            } else {
-                endpoint =
-                    DEFAULT_MODEL === "both"
-                        ? "both"
-                        : DEFAULT_MODEL === "deeplab"
-                            ? "deeplab"
-                            : DEFAULT_MODEL === "aerial"
-                                ? "aerial"
-                                : "unet";
-            }
+            // Only SAR images are supported - always route to SAR endpoints
+            // Always use both models for SAR processing
+            const endpoint = "both";
 
             const response = await fetch(
                 `http://localhost:8000/predict/${endpoint}`,
@@ -193,16 +185,8 @@ function App() {
 
     // Compute a friendly label for the model(s) that produced the current result
     const getResultModelLabel = () => {
-        // If detection decided, prefer that
-        if (detectedSource === "sar") return "UNet + DeepLabV3+";
-        if (detectedSource === "aerial") return "Roboflow_Aerial";
-
-        // Otherwise use default model
-        if (DEFAULT_MODEL === "both") return "UNet + DeepLabV3+";
-        if (DEFAULT_MODEL === "deeplab") return "DeepLabV3+";
-        if (DEFAULT_MODEL === "unet") return "UNet";
-        if (DEFAULT_MODEL === "aerial") return "Roboflow_Aerial";
-        return (DEFAULT_MODEL || "Model").toString();
+        // Only SAR images supported - always use both models
+        return "UNet + DeepLabV3+";
     };
 
     const resetUpload = () => {
@@ -244,20 +228,17 @@ function App() {
                         <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-8">
                             <h2 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center">
                                 <Upload className="h-6 w-6 mr-3 text-blue-600" />
-                                Upload Satellite Image
+                                Upload SAR Image
                             </h2>
 
                             {/* Model Selection (automatic) */}
                             <div className="mb-6">
                                 <label className="block text-sm font-medium text-gray-700 mb-3">
-                                    Model selection
+                                    Image Type
                                 </label>
                                 <div className="rounded-lg p-4 bg-gray-50 border border-gray-200 text-sm text-gray-700">
-                                    Models are chosen automatically by the AI
-                                    based on the uploaded image (SAR images will
-                                    run both segmentation models; aerial images
-                                    use the Roboflow workflow). You can still
-                                    override the auto-detection below if needed.
+                                    Only SAR (Synthetic Aperture Radar) images are supported.
+                                    SAR images will run both UNet and DeepLabV3+ segmentation models.
                                 </div>
                             </div>
 
@@ -343,7 +324,7 @@ function App() {
                                         </button>
                                     </div>
 
-                                    {/* Auto-detection info and override */}
+                                    {/* Auto-detection info */}
                                     <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                                         <div className="flex items-center justify-between">
                                             <div>
@@ -351,9 +332,11 @@ function App() {
                                                     Auto-detected source:
                                                 </p>
                                                 <p className="text-md font-medium text-gray-900">
-                                                    {detectedSource
-                                                        ? detectedSource.toUpperCase()
-                                                        : "Not detected"}
+                                                    {detectedSource === "sar"
+                                                        ? "SAR"
+                                                        : detectedSource === "aerial"
+                                                            ? "AERIAL (not supported)"
+                                                            : "Not detected"}
                                                     {detectionConfidence !==
                                                         null && (
                                                             <span className="text-sm text-gray-500 ml-2">
@@ -366,52 +349,11 @@ function App() {
                                                             </span>
                                                         )}
                                                 </p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-xs text-gray-500">
-                                                    Override detection
-                                                </p>
-                                                <div className="mt-2 flex space-x-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            setDetectedSource(
-                                                                "sar",
-                                                            );
-                                                            setDetectionConfidence(
-                                                                null,
-                                                            );
-                                                        }}
-                                                        className={`px-3 py-1 text-sm rounded-lg border ${detectedSource === "sar" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300"}`}
-                                                    >
-                                                        SAR
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setDetectedSource(
-                                                                "aerial",
-                                                            );
-                                                            setDetectionConfidence(
-                                                                null,
-                                                            );
-                                                        }}
-                                                        className={`px-3 py-1 text-sm rounded-lg border ${detectedSource === "aerial" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300"}`}
-                                                    >
-                                                        AERIAL
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setDetectedSource(
-                                                                null,
-                                                            );
-                                                            setDetectionConfidence(
-                                                                null,
-                                                            );
-                                                        }}
-                                                        className="px-3 py-1 text-sm rounded-lg border bg-white text-gray-700 border-gray-300"
-                                                    >
-                                                        CLEAR
-                                                    </button>
-                                                </div>
+                                                {detectedSource === "aerial" && (
+                                                    <p className="text-xs text-red-600 mt-1">
+                                                        Aerial images are not supported. Please upload a SAR image.
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -437,13 +379,13 @@ function App() {
                             <ul className="space-y-2 text-sm text-gray-600">
                                 <li className="flex items-start">
                                     <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
-                                    Upload satellite or aerial images of ocean
+                                    Upload SAR (Synthetic Aperture Radar) images of ocean
                                     areas
                                 </li>
                                 <li className="flex items-start">
                                     <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
-                                    Choose between UNet, DeepLabV3+, or both
-                                    models
+                                    Both UNet and DeepLabV3+ models are used for
+                                    comprehensive analysis
                                 </li>
                                 <li className="flex items-start">
                                     <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
@@ -485,9 +427,7 @@ function App() {
                                         results
                                     </p>
                                     <p className="text-sm text-gray-400 mt-2">
-                                        The AI automatically selects the
-                                        appropriate model based on the image;
-                                        upload an image above to begin.
+                                        Upload a SAR image above to begin detection.
                                     </p>
                                 </div>
                             )}
@@ -574,17 +514,7 @@ function App() {
                                             Model Information
                                         </h4>
                                         <p className="text-sm text-gray-600">
-                                            {getResultModelLabel() === "UNet" &&
-                                                "UNet: Excellent for precise boundary detection with efficient U-shaped architecture."}
-                                            {getResultModelLabel() ===
-                                                "DeepLabV3+" &&
-                                                "DeepLabV3+: Advanced model with dilated convolutions for improved contextual understanding."}
-                                            {getResultModelLabel() ===
-                                                "UNet + DeepLabV3+" &&
-                                                "Comparison view showing results from both UNet and DeepLabV3+ models side by side."}
-                                            {getResultModelLabel() ===
-                                                "Roboflow_Aerial" &&
-                                                "Aerial workflow visualization composed server-side from Roboflow polygons."}
+                                            Comparison view showing results from both UNet and DeepLabV3+ models side by side. UNet provides excellent precise boundary detection with efficient U-shaped architecture, while DeepLabV3+ offers advanced contextual understanding with dilated convolutions.
                                         </p>
                                     </div>
                                 </div>
