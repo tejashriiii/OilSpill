@@ -17,7 +17,8 @@ function App() {
     const [resultImageUrl, setResultImageUrl] = useState(null);
     const [error, setError] = useState(null);
     const [dragActive, setDragActive] = useState(false);
-    const DEFAULT_MODEL = "unet";
+    const DEFAULT_MODEL = "deeplab"; // 'deeplab' | 'unet' | 'both'
+    const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
     const [zoomedImage, setZoomedImage] = useState(null); // URL of image to zoom
 
     // Color mapping for segmentation classes (RGB values)
@@ -40,6 +41,7 @@ function App() {
     // Refs for aerial overlay rendering (kept in case we want client-side later)
     const overlayContainerRef = useRef(null);
     const previewImgRef = useRef(null);
+    const modelSettingsRef = useRef(null);
 
     const handleFileSelect = (file) => {
         if (file && file.type.startsWith("image/")) {
@@ -55,6 +57,8 @@ function App() {
             setPreviewUrl(URL.createObjectURL(file));
             setResultImageUrl(null);
             setError(null);
+            // Reset model selection back to default when a new file is chosen
+            setSelectedModel(DEFAULT_MODEL);
         } else {
             setError("Please select a valid image file");
         }
@@ -99,9 +103,13 @@ function App() {
             const formData = new FormData();
             formData.append("file", selectedFile);
 
-            // Only SAR images are supported - always route to SAR endpoints
-            // Always use both models for SAR processing
-            const endpoint = "both";
+            // Choose backend endpoint based on selected model
+            let endpoint = "deeplab";
+            if (selectedModel === "unet") {
+                endpoint = "unet";
+            } else if (selectedModel === "both") {
+                endpoint = "both";
+            }
 
             const response = await fetch(
                 `http://localhost:8000/predict/${endpoint}`,
@@ -151,8 +159,9 @@ function App() {
 
     // Compute a friendly label for the model(s) that produced the current result
     const getResultModelLabel = () => {
-        // Only SAR images supported - always use both models
-        return "UNet + DeepLabV3+";
+        if (selectedModel === "unet") return "UNet";
+        if (selectedModel === "both") return "UNet + DeepLabV3+";
+        return "DeepLabV3+";
     };
 
     const resetUpload = () => {
@@ -160,6 +169,7 @@ function App() {
         setPreviewUrl(null);
         setResultImageUrl(null);
         setError(null);
+        setSelectedModel(DEFAULT_MODEL);
         // Clean up object URLs to prevent memory leaks
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         if (resultImageUrl) URL.revokeObjectURL(resultImageUrl);
@@ -191,21 +201,70 @@ function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Upload Section */}
                     <div className="space-y-6">
-                        <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-8">
-                            <h2 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center">
-                                <Upload className="h-6 w-6 mr-3 text-blue-600" />
-                                Upload SAR Image
-                            </h2>
-
-                            {/* Model Selection (automatic) */}
-                            <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-3">
-                                    Image Type
-                                </label>
-                                <div className="rounded-lg p-4 bg-gray-50 border border-gray-200 text-sm text-gray-700">
-                                    Only SAR (Synthetic Aperture Radar) images are supported.
-                                    SAR images will run both UNet and DeepLabV3+ segmentation models.
-                                </div>
+                        <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-8 relative">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-semibold text-gray-900 flex items-center">
+                                    <Upload className="h-6 w-6 mr-3 text-blue-600" />
+                                    Upload SAR Image
+                                </h2>
+                                {/* Small, subtle settings trigger in the corner */}
+                                <details className="relative" ref={modelSettingsRef}>
+                                    <summary className="list-none text-xs text-gray-500 hover:text-gray-700 cursor-pointer px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
+                                        Model settings
+                                    </summary>
+                                    <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-lg p-4 z-20">
+                                        <div className="space-y-2 text-sm text-gray-800">
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="model"
+                                                    value="deeplab"
+                                                    checked={selectedModel === "deeplab"}
+                                                    onChange={() => {
+                                                        setSelectedModel("deeplab");
+                                                        if (modelSettingsRef.current) {
+                                                            modelSettingsRef.current.open = false;
+                                                        }
+                                                    }}
+                                                    className="text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span>DeepLabV3+ (default)</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="model"
+                                                    value="unet"
+                                                    checked={selectedModel === "unet"}
+                                                    onChange={() => {
+                                                        setSelectedModel("unet");
+                                                        if (modelSettingsRef.current) {
+                                                            modelSettingsRef.current.open = false;
+                                                        }
+                                                    }}
+                                                    className="text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span>UNet</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="model"
+                                                    value="both"
+                                                    checked={selectedModel === "both"}
+                                                    onChange={() => {
+                                                        setSelectedModel("both");
+                                                        if (modelSettingsRef.current) {
+                                                            modelSettingsRef.current.open = false;
+                                                        }
+                                                    }}
+                                                    className="text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span>UNet and DeepLabV3+</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </details>
                             </div>
 
                             {/* File Upload Area */}
@@ -316,11 +375,6 @@ function App() {
                                     <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
                                     Upload SAR (Synthetic Aperture Radar) images of ocean
                                     areas
-                                </li>
-                                <li className="flex items-start">
-                                    <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
-                                    Both UNet and DeepLabV3+ models are used for
-                                    comprehensive analysis
                                 </li>
                                 <li className="flex items-start">
                                     <CheckCircle className="h-4 w-4 text-teal-500 mr-2 mt-0.5 flex-shrink-0" />
