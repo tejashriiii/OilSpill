@@ -18,8 +18,6 @@ function App() {
     const [error, setError] = useState(null);
     const [dragActive, setDragActive] = useState(false);
     const DEFAULT_MODEL = "unet";
-    const [detectedSource, setDetectedSource] = useState(null); // 'sar' | 'aerial' | null
-    const [detectionConfidence, setDetectionConfidence] = useState(null);
     const [zoomedImage, setZoomedImage] = useState(null); // URL of image to zoom
 
     // Color mapping for segmentation classes (RGB values)
@@ -57,53 +55,8 @@ function App() {
             setPreviewUrl(URL.createObjectURL(file));
             setResultImageUrl(null);
             setError(null);
-            // reset auto-detection state
-            setDetectedSource(null);
-            setDetectionConfidence(null);
-            // Kick off auto-detection
-            runAutoDetect(file);
         } else {
             setError("Please select a valid image file");
-        }
-    };
-
-    // Try to detect whether the image is SAR or Aerial using a backend endpoint
-    const runAutoDetect = async (file) => {
-        try {
-            const formData = new FormData();
-            formData.append("file", file);
-
-            // Attempt to call backend detect endpoint. If it doesn't exist, we'll silently skip.
-            const resp = await fetch(
-                `http://localhost:8000/detect/sarvsdrone`,
-                {
-                    method: "POST",
-                    body: formData,
-                },
-            );
-
-            if (!resp.ok) {
-                // Not available or error - leave detection as null
-                console.warn(
-                    "Auto-detect endpoint not available or returned error",
-                );
-                return;
-            }
-
-            const json = await resp.json();
-            // Expecting shape: { source: 'sar'|'aerial', confidence: 0.0-1.0 }
-            if (json && (json.source === "sar" || json.source === "aerial")) {
-                setDetectedSource(json.source);
-                    setDetectionConfidence(
-                        typeof json.confidence === "number"
-                            ? json.confidence
-                            : null,
-                    );
-                // If SAR -> we want to call 'both' endpoint; if aerial -> 'aerial'
-                // We don't auto-start prediction here; user still clicks 'Detect Oil Spills'
-            }
-        } catch (err) {
-            console.warn("Auto-detect failed:", err);
         }
     };
 
@@ -137,12 +90,6 @@ function App() {
 
     const processImage = async () => {
         if (!selectedFile) return;
-
-        // Block aerial images
-        if (detectedSource === "aerial") {
-            setError("Aerial images are not supported. Please upload a SAR (Synthetic Aperture Radar) image.");
-            return;
-        }
 
         setIsProcessing(true);
         setError(null);
@@ -345,38 +292,6 @@ function App() {
                                     </div>
 
                                     {/* Auto-detection info */}
-                                    <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-600">
-                                                    Auto-detected source:
-                                                </p>
-                                                <p className="text-md font-medium text-gray-900">
-                                                    {detectedSource === "sar"
-                                                        ? "SAR"
-                                                        : detectedSource === "aerial"
-                                                            ? "AERIAL (not supported)"
-                                                            : "Not detected"}
-                                                    {detectionConfidence !==
-                                                        null && (
-                                                            <span className="text-sm text-gray-500 ml-2">
-                                                                (
-                                                                {Math.round(
-                                                                    detectionConfidence *
-                                                                    100,
-                                                                )}
-                                                                %)
-                                                            </span>
-                                                        )}
-                                                </p>
-                                                {detectedSource === "aerial" && (
-                                                    <p className="text-xs text-red-600 mt-1">
-                                                        Aerial images are not supported. Please upload a SAR image.
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
                             )}
 
