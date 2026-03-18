@@ -491,9 +491,27 @@ function App() {
                                         <h4 className="font-semibold text-gray-900 mb-2">
                                             Model Information
                                         </h4>
-                                        <p className="text-sm text-gray-600">
-                                            Comparison view showing results from both UNet and DeepLabV3+ models side by side. UNet provides excellent precise boundary detection with efficient U-shaped architecture, while DeepLabV3+ offers advanced contextual understanding with dilated convolutions.
-                                        </p>
+                                        {selectedModel === "deeplab" && (
+                                            <p className="text-sm text-gray-600">
+                                                DeepLabV3+ provides strong contextual understanding using atrous (dilated)
+                                                convolutions and an encoder-decoder design, making it well-suited for
+                                                detailed oil spill segmentation from SAR imagery.
+                                            </p>
+                                        )}
+                                        {selectedModel === "unet" && (
+                                            <p className="text-sm text-gray-600">
+                                                UNet uses a U-shaped encoder-decoder architecture with skip connections,
+                                                giving precise boundary localization and efficient segmentation for oil
+                                                spill detection.
+                                            </p>
+                                        )}
+                                        {selectedModel === "both" && (
+                                            <p className="text-sm text-gray-600">
+                                                Comparison view combining UNet and DeepLabV3+ predictions side by side.
+                                                UNet offers sharp boundary detection with its U-shaped architecture, while
+                                                DeepLabV3+ adds rich contextual understanding via atrous convolutions.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             )}
