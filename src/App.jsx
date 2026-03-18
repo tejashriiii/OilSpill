@@ -20,6 +20,7 @@ function App() {
     const DEFAULT_MODEL = "deeplab"; // 'deeplab' | 'unet' | 'both'
     const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
     const [zoomedImage, setZoomedImage] = useState(null); // URL of image to zoom
+    const [detectionInfo, setDetectionInfo] = useState(null); // oil spill detection summary
 
     // Color mapping for segmentation classes (RGB values)
     const COLOR_MAP = [
@@ -56,6 +57,7 @@ function App() {
             }
             setPreviewUrl(URL.createObjectURL(file));
             setResultImageUrl(null);
+            setDetectionInfo(null);
             setError(null);
             // Reset model selection back to default when a new file is chosen
             setSelectedModel(DEFAULT_MODEL);
@@ -98,6 +100,7 @@ function App() {
         setIsProcessing(true);
         setError(null);
         setResultImageUrl(null);
+        setDetectionInfo(null);
 
         try {
             const formData = new FormData();
@@ -122,6 +125,85 @@ function App() {
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(`Failed to process image: ${errorText}`);
+            }
+
+            // Parse oil-spill detection headers from the backend
+            const parseBool = (value) =>
+                typeof value === "string" &&
+                value.toLowerCase() === "true";
+
+            let detectionSummary = null;
+
+            if (selectedModel === "both") {
+                const unetPresent = parseBool(
+                    response.headers.get("x-oil-spill-present-unet"),
+                );
+                const unetFraction = parseFloat(
+                    response.headers.get("x-oil-spill-fraction-unet") || "0",
+                );
+                const deeplabPresent = parseBool(
+                    response.headers.get("x-oil-spill-present-deeplab"),
+                );
+                const deeplabFraction = parseFloat(
+                    response.headers.get("x-oil-spill-fraction-deeplab") || "0",
+                );
+
+                if (
+                    !Number.isNaN(unetFraction) ||
+                    !Number.isNaN(deeplabFraction)
+                ) {
+                    const models = [
+                        {
+                            name: "UNet",
+                            hasSpill: !!unetPresent,
+                            fraction: Number.isNaN(unetFraction)
+                                ? 0
+                                : unetFraction,
+                        },
+                        {
+                            name: "DeepLabV3+",
+                            hasSpill: !!deeplabPresent,
+                            fraction: Number.isNaN(deeplabFraction)
+                                ? 0
+                                : deeplabFraction,
+                        },
+                    ];
+
+                    const overallHasSpill = models.some(
+                        (m) => m.hasSpill,
+                    );
+
+                    detectionSummary = {
+                        overallHasSpill,
+                        models,
+                    };
+                }
+            } else {
+                const present = parseBool(
+                    response.headers.get("x-oil-spill-present"),
+                );
+                const fraction = parseFloat(
+                    response.headers.get("x-oil-spill-fraction") || "0",
+                );
+
+                if (!Number.isNaN(fraction)) {
+                    detectionSummary = {
+                        overallHasSpill: !!present,
+                        models: [
+                            {
+                                name: getResultModelLabel(),
+                                hasSpill: !!present,
+                                fraction: Number.isNaN(fraction)
+                                    ? 0
+                                    : fraction,
+                            },
+                        ],
+                    };
+                }
+            }
+
+            if (detectionSummary) {
+                setDetectionInfo(detectionSummary);
             }
 
             // All endpoints now return images
@@ -170,6 +252,7 @@ function App() {
         setResultImageUrl(null);
         setError(null);
         setSelectedModel(DEFAULT_MODEL);
+        setDetectionInfo(null);
         // Clean up object URLs to prevent memory leaks
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         if (resultImageUrl) URL.revokeObjectURL(resultImageUrl);
@@ -407,6 +490,56 @@ function App() {
                                     </button>
                                 )}
                             </div>
+
+                            {/* Oil Spill Detection Summary */}
+                            {detectionInfo && !isProcessing && resultImageUrl && (
+                                <div
+                                    className={`mb-6 p-4 rounded-xl border flex items-start space-x-3 ${
+                                        detectionInfo.overallHasSpill
+                                            ? "bg-red-50 border-red-200"
+                                            : "bg-green-50 border-green-200"
+                                    }`}
+                                >
+                                    <div className="mt-0.5">
+                                        {detectionInfo.overallHasSpill ? (
+                                            <AlertCircle className="h-5 w-5 text-red-600" />
+                                        ) : (
+                                            <CheckCircle className="h-5 w-5 text-green-600" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <p
+                                            className={`font-semibold text-sm ${
+                                                detectionInfo.overallHasSpill
+                                                    ? "text-red-800"
+                                                    : "text-green-800"
+                                            }`}
+                                        >
+                                            {detectionInfo.overallHasSpill
+                                                ? "Oil contamination detected"
+                                                : "No oil contamination detected"}
+                                        </p>
+                                        {detectionInfo.models &&
+                                            detectionInfo.models.length > 0 && (
+                                                <ul className="mt-2 space-y-1 text-xs text-gray-700">
+                                                    {detectionInfo.models.map(
+                                                        (m, idx) => (
+                                                            <li key={idx}>
+                                                                <span className="font-medium">
+                                                                    {m.name}
+                                                                    {": "}
+                                                                </span>
+                                                                {m.hasSpill
+                                                                    ? "Spill Detected"
+                                                                    : "No Spill Region Detected"}
+                                                            </li>
+                                                        ),
+                                                    )}
+                                                </ul>
+                                            )}
+                                    </div>
+                                </div>
+                            )}
 
                             {!resultImageUrl && !isProcessing && (
                                 <div className="text-center py-12 text-gray-500">

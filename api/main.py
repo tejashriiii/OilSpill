@@ -29,6 +29,21 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Expose custom detection headers so the browser can read them
+    expose_headers=[
+        "X-Oil-Spill-Present",
+        "X-Oil-Spill-Fraction",
+        "X-Oil-Spill-Pixels",
+        "X-Oil-Spill-Total-Pixels",
+        "X-Oil-Spill-Present-UNet",
+        "X-Oil-Spill-Fraction-UNet",
+        "X-Oil-Spill-Pixels-UNet",
+        "X-Oil-Spill-Total-Pixels-UNet",
+        "X-Oil-Spill-Present-DeepLab",
+        "X-Oil-Spill-Fraction-DeepLab",
+        "X-Oil-Spill-Pixels-DeepLab",
+        "X-Oil-Spill-Total-Pixels-DeepLab",
+    ],
 )
 
 IMG_HEIGHT = 256
@@ -131,6 +146,43 @@ def create_prediction_plot(original_image, predicted_mask, model_name):
     return buf
 
 
+def compute_oil_spill_stats(
+    predicted_mask: np.ndarray, pollution_classes: tuple[int, ...] = (1, 2)
+):
+    """
+    Compute simple oil / sheen pollution statistics from a predicted mask.
+
+    By default we treat both:
+      - Class 1 (Sheen)
+      - Class 2 (Oil Spill)
+    as positive "oil-related" detections.
+
+    We treat ANY pixel in one of the pollution classes as a positive
+    detection. In other words, the minimum fraction threshold is 0.0:
+    even the tiniest contiguous region will be reported as present.
+
+    Returns a tuple:
+        (has_spill: bool, fraction: float, pollution_pixels: int, total_pixels: int)
+    """
+    try:
+        if not isinstance(pollution_classes, (list, tuple, set)):
+            pollution_classes = (int(pollution_classes),)
+
+        mask = np.isin(predicted_mask, list(pollution_classes))
+        pollution_pixels = int(np.sum(mask))
+        total_pixels = int(predicted_mask.size)
+        fraction = float(pollution_pixels) / float(total_pixels) if total_pixels else 0.0
+
+        # Minimum fractional coverage required to say "spill present"
+        # User wants *any* detected pollution (even a tiny speck) to
+        # count as a positive, so this is fixed at 0.0.
+        has_spill = pollution_pixels > 0
+        return has_spill, fraction, pollution_pixels, total_pixels
+    except Exception:
+        # On any unexpected error, fall back to no spill
+        return False, 0.0, 0, int(predicted_mask.size or 0)
+
+
 @app.post("/predict/unet")
 async def predict_unet(file: UploadFile = File(...)):
     if not unet_model:
@@ -146,12 +198,24 @@ async def predict_unet(file: UploadFile = File(...)):
         prediction = unet_model.predict(np.expand_dims(processed_image, axis=0))
         predicted_mask = np.argmax(prediction, axis=3)[0, :, :]
 
+        has_spill, fraction, oil_pixels, total_pixels = compute_oil_spill_stats(
+            predicted_mask
+        )
+
         plot_buffer = create_prediction_plot(processed_image, predicted_mask, "UNet")
+
+        headers = {
+            "Content-Disposition": "attachment; filename=unet_prediction.png",
+            "X-Oil-Spill-Present": "true" if has_spill else "false",
+            "X-Oil-Spill-Fraction": str(fraction),
+            "X-Oil-Spill-Pixels": str(oil_pixels),
+            "X-Oil-Spill-Total-Pixels": str(total_pixels),
+        }
 
         return StreamingResponse(
             io.BytesIO(plot_buffer.read()),
             media_type="image/png",
-            headers={"Content-Disposition": "attachment; filename=unet_prediction.png"},
+            headers=headers,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -172,16 +236,26 @@ async def predict_deeplab(file: UploadFile = File(...)):
         prediction = deeplab_model.predict(np.expand_dims(processed_image, axis=0))
         predicted_mask = np.argmax(prediction, axis=3)[0, :, :]
 
+        has_spill, fraction, oil_pixels, total_pixels = compute_oil_spill_stats(
+            predicted_mask
+        )
+
         plot_buffer = create_prediction_plot(
             processed_image, predicted_mask, "DeepLabV3+"
         )
 
+        headers = {
+            "Content-Disposition": "attachment; filename=deeplab_prediction.png",
+            "X-Oil-Spill-Present": "true" if has_spill else "false",
+            "X-Oil-Spill-Fraction": str(fraction),
+            "X-Oil-Spill-Pixels": str(oil_pixels),
+            "X-Oil-Spill-Total-Pixels": str(total_pixels),
+        }
+
         return StreamingResponse(
             io.BytesIO(plot_buffer.read()),
             media_type="image/png",
-            headers={
-                "Content-Disposition": "attachment; filename=deeplab_prediction.png"
-            },
+            headers=headers,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -206,6 +280,19 @@ async def predict_both(file: UploadFile = File(...)):
             np.expand_dims(processed_image, axis=0)
         )
         deeplab_mask = np.argmax(deeplab_prediction, axis=3)[0, :, :]
+
+        (
+            unet_has_spill,
+            unet_fraction,
+            unet_oil_pixels,
+            unet_total_pixels,
+        ) = compute_oil_spill_stats(unet_mask)
+        (
+            deeplab_has_spill,
+            deeplab_fraction,
+            deeplab_oil_pixels,
+            deeplab_total_pixels,
+        ) = compute_oil_spill_stats(deeplab_mask)
 
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 
@@ -264,12 +351,24 @@ async def predict_both(file: UploadFile = File(...)):
         buf.seek(0)
         plt.close()
 
+        headers = {
+            "Content-Disposition": "attachment; filename=both_predictions.png",
+            # UNet stats
+            "X-Oil-Spill-Present-UNet": "true" if unet_has_spill else "false",
+            "X-Oil-Spill-Fraction-UNet": str(unet_fraction),
+            "X-Oil-Spill-Pixels-UNet": str(unet_oil_pixels),
+            "X-Oil-Spill-Total-Pixels-UNet": str(unet_total_pixels),
+            # DeepLab stats
+            "X-Oil-Spill-Present-DeepLab": "true" if deeplab_has_spill else "false",
+            "X-Oil-Spill-Fraction-DeepLab": str(deeplab_fraction),
+            "X-Oil-Spill-Pixels-DeepLab": str(deeplab_oil_pixels),
+            "X-Oil-Spill-Total-Pixels-DeepLab": str(deeplab_total_pixels),
+        }
+
         return StreamingResponse(
             io.BytesIO(buf.read()),
             media_type="image/png",
-            headers={
-                "Content-Disposition": "attachment; filename=both_predictions.png"
-            },
+            headers=headers,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
