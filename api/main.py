@@ -35,14 +35,17 @@ app.add_middleware(
         "X-Oil-Spill-Fraction",
         "X-Oil-Spill-Pixels",
         "X-Oil-Spill-Total-Pixels",
+        "X-Oil-Spill-Area-Km2",
         "X-Oil-Spill-Present-UNet",
         "X-Oil-Spill-Fraction-UNet",
         "X-Oil-Spill-Pixels-UNet",
         "X-Oil-Spill-Total-Pixels-UNet",
+        "X-Oil-Spill-Area-Km2-UNet",
         "X-Oil-Spill-Present-DeepLab",
         "X-Oil-Spill-Fraction-DeepLab",
         "X-Oil-Spill-Pixels-DeepLab",
         "X-Oil-Spill-Total-Pixels-DeepLab",
+        "X-Oil-Spill-Area-Km2-DeepLab",
     ],
 )
 
@@ -161,8 +164,19 @@ def compute_oil_spill_stats(
     detection. In other words, the minimum fraction threshold is 0.0:
     even the tiniest contiguous region will be reported as present.
 
+    Area estimation:
+      - Uses a ground sampling distance (GSD) in meters per pixel side.
+      - Configure via env var OIL_SPILL_PIXEL_SIZE_METERS (default 10.0).
+      - Area per pixel = GSD^2, converted from m² to km².
+
     Returns a tuple:
-        (has_spill: bool, fraction: float, pollution_pixels: int, total_pixels: int)
+        (
+            has_spill: bool,
+            fraction: float,
+            pollution_pixels: int,
+            total_pixels: int,
+            area_km2: float,
+        )
     """
     try:
         if not isinstance(pollution_classes, (list, tuple, set)):
@@ -173,14 +187,26 @@ def compute_oil_spill_stats(
         total_pixels = int(predicted_mask.size)
         fraction = float(pollution_pixels) / float(total_pixels) if total_pixels else 0.0
 
-        # Minimum fractional coverage required to say "spill present"
-        # User wants *any* detected pollution (even a tiny speck) to
-        # count as a positive, so this is fixed at 0.0.
+        # Any detected pollution counts as positive
         has_spill = pollution_pixels > 0
-        return has_spill, fraction, pollution_pixels, total_pixels
+
+        # Approximate physical area in km² based on pixel size metadata
+        try:
+            pixel_size_m = float(os.getenv("OIL_SPILL_PIXEL_SIZE_METERS", "10.0"))
+        except Exception:
+            pixel_size_m = 10.0
+
+        if pixel_size_m < 0:
+            pixel_size_m = 0.0
+
+        area_per_pixel_m2 = pixel_size_m * pixel_size_m
+        area_km2 = (pollution_pixels * area_per_pixel_m2) / 1_000_000.0
+
+        return has_spill, fraction, pollution_pixels, total_pixels, area_km2
     except Exception:
         # On any unexpected error, fall back to no spill
-        return False, 0.0, 0, int(predicted_mask.size or 0)
+        total = int(predicted_mask.size or 0)
+        return False, 0.0, 0, total, 0.0
 
 
 @app.post("/predict/unet")
@@ -198,8 +224,8 @@ async def predict_unet(file: UploadFile = File(...)):
         prediction = unet_model.predict(np.expand_dims(processed_image, axis=0))
         predicted_mask = np.argmax(prediction, axis=3)[0, :, :]
 
-        has_spill, fraction, oil_pixels, total_pixels = compute_oil_spill_stats(
-            predicted_mask
+        has_spill, fraction, oil_pixels, total_pixels, area_km2 = (
+            compute_oil_spill_stats(predicted_mask)
         )
 
         plot_buffer = create_prediction_plot(processed_image, predicted_mask, "UNet")
@@ -210,6 +236,7 @@ async def predict_unet(file: UploadFile = File(...)):
             "X-Oil-Spill-Fraction": str(fraction),
             "X-Oil-Spill-Pixels": str(oil_pixels),
             "X-Oil-Spill-Total-Pixels": str(total_pixels),
+            "X-Oil-Spill-Area-Km2": str(area_km2),
         }
 
         return StreamingResponse(
@@ -236,8 +263,8 @@ async def predict_deeplab(file: UploadFile = File(...)):
         prediction = deeplab_model.predict(np.expand_dims(processed_image, axis=0))
         predicted_mask = np.argmax(prediction, axis=3)[0, :, :]
 
-        has_spill, fraction, oil_pixels, total_pixels = compute_oil_spill_stats(
-            predicted_mask
+        has_spill, fraction, oil_pixels, total_pixels, area_km2 = (
+            compute_oil_spill_stats(predicted_mask)
         )
 
         plot_buffer = create_prediction_plot(
@@ -250,6 +277,7 @@ async def predict_deeplab(file: UploadFile = File(...)):
             "X-Oil-Spill-Fraction": str(fraction),
             "X-Oil-Spill-Pixels": str(oil_pixels),
             "X-Oil-Spill-Total-Pixels": str(total_pixels),
+            "X-Oil-Spill-Area-Km2": str(area_km2),
         }
 
         return StreamingResponse(
@@ -286,12 +314,14 @@ async def predict_both(file: UploadFile = File(...)):
             unet_fraction,
             unet_oil_pixels,
             unet_total_pixels,
+            unet_area_km2,
         ) = compute_oil_spill_stats(unet_mask)
         (
             deeplab_has_spill,
             deeplab_fraction,
             deeplab_oil_pixels,
             deeplab_total_pixels,
+            deeplab_area_km2,
         ) = compute_oil_spill_stats(deeplab_mask)
 
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
@@ -358,11 +388,13 @@ async def predict_both(file: UploadFile = File(...)):
             "X-Oil-Spill-Fraction-UNet": str(unet_fraction),
             "X-Oil-Spill-Pixels-UNet": str(unet_oil_pixels),
             "X-Oil-Spill-Total-Pixels-UNet": str(unet_total_pixels),
+            "X-Oil-Spill-Area-Km2-UNet": str(unet_area_km2),
             # DeepLab stats
             "X-Oil-Spill-Present-DeepLab": "true" if deeplab_has_spill else "false",
             "X-Oil-Spill-Fraction-DeepLab": str(deeplab_fraction),
             "X-Oil-Spill-Pixels-DeepLab": str(deeplab_oil_pixels),
             "X-Oil-Spill-Total-Pixels-DeepLab": str(deeplab_total_pixels),
+            "X-Oil-Spill-Area-Km2-DeepLab": str(deeplab_area_km2),
         }
 
         return StreamingResponse(

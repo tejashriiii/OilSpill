@@ -147,6 +147,12 @@ function App() {
                 const deeplabFraction = parseFloat(
                     response.headers.get("x-oil-spill-fraction-deeplab") || "0",
                 );
+                const unetAreaKm2 = parseFloat(
+                    response.headers.get("x-oil-spill-area-km2-unet") || "0",
+                );
+                const deeplabAreaKm2 = parseFloat(
+                    response.headers.get("x-oil-spill-area-km2-deeplab") || "0",
+                );
 
                 if (
                     !Number.isNaN(unetFraction) ||
@@ -159,6 +165,9 @@ function App() {
                             fraction: Number.isNaN(unetFraction)
                                 ? 0
                                 : unetFraction,
+                            areaKm2: Number.isNaN(unetAreaKm2)
+                                ? 0
+                                : unetAreaKm2,
                         },
                         {
                             name: "DeepLabV3+",
@@ -166,6 +175,9 @@ function App() {
                             fraction: Number.isNaN(deeplabFraction)
                                 ? 0
                                 : deeplabFraction,
+                            areaKm2: Number.isNaN(deeplabAreaKm2)
+                                ? 0
+                                : deeplabAreaKm2,
                         },
                     ];
 
@@ -185,6 +197,9 @@ function App() {
                 const fraction = parseFloat(
                     response.headers.get("x-oil-spill-fraction") || "0",
                 );
+                const areaKm2 = parseFloat(
+                    response.headers.get("x-oil-spill-area-km2") || "0",
+                );
 
                 if (!Number.isNaN(fraction)) {
                     detectionSummary = {
@@ -196,6 +211,9 @@ function App() {
                                 fraction: Number.isNaN(fraction)
                                     ? 0
                                     : fraction,
+                                areaKm2: Number.isNaN(areaKm2)
+                                    ? 0
+                                    : areaKm2,
                             },
                         ],
                     };
@@ -530,8 +548,12 @@ function App() {
                                                                     {": "}
                                                                 </span>
                                                                 {m.hasSpill
-                                                                    ? "Spill Detected"
-                                                                    : "No Spill Region Detected"}
+                                                                    ? m.areaKm2 && m.areaKm2 > 0
+                                                                        ? `spill detected (~${m.areaKm2.toFixed(
+                                                                              3,
+                                                                          )} km²)`
+                                                                        : "spill detected"
+                                                                    : "no spill region detected"}
                                                             </li>
                                                         ),
                                                     )}
